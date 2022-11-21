@@ -22,13 +22,14 @@ namespace SharePointUploader
 			{
 				Console.ForegroundColor = ConsoleColor.Red;
 				Console.WriteLine(ex.Message);
+				Console.WriteLine(ex.StackTrace);
 				Console.ResetColor();
 			}
 		}
 
 		private static async Task RunAsync(string sourceFolder, string filePattern, string siteName, string siteFolderPath)
 		{
-			AuthenticationConfig config = AuthenticationConfig.ReadFromJsonFile("appsettings.json");
+			AuthenticationConfig config = AuthenticationConfig.ReadFromJsonFile(System.IO.Path.Join(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), "appsettings.json"));
 
 			// You can run this sample using ClientSecret or Certificate. The code will differ only when instantiating the IConfidentialClientApplication
 			bool isUsingClientSecret = Shared.IsAppUsingClientSecret(config);
