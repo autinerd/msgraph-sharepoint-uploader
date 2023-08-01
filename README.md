@@ -1,6 +1,6 @@
-# Simple SharePoint Uploader for MS Graph
+# Simple SharePoint Interface for MS Graph
 
-With this simple console application, you can automate uploading files to SharePoint.
+With this simple console application, you can automate uploading, downloading, moving and deleting files to SharePoint.
 
 ## Preparation
 
@@ -15,10 +15,13 @@ Instead of the **User.Read.All** permission, you need these:
 
 ## Usage
 
-`SharePointUploader "source folder name" "file name pattern" "SharePoint site name" "SharePoint destination folder path"`
+`SharePointInterface --upload "source folder name" "file name pattern" "SharePoint site name" "SharePoint destination folder path"`
+`SharePointInterface --download ""SharePoint site name"" ""SharePoint source file path"" ""Destination file path""`
+`SharePointInterface --move ""SharePoint site name"" ""SharePoint source file path"" ""SharePoint destination folder path"`
+`SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""`
 
 Example: Uploading a bunch of PDF files to a folder on the "Test" site.
 
-`SharePointUploader "C:\Files\" "*.pdf" "Test" "\folder"`
+`SharePointInterface --upload "C:\Files\" "*.pdf" "Test" "\folder"`
 
 Logs will be generated in the `client.log` file.

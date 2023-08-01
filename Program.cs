@@ -1,22 +1,29 @@
 ﻿using Microsoft.Graph;
-using Microsoft.Identity.Client;
-using Microsoft.Identity.Web;
+using Microsoft.Graph.Models;
+using Microsoft.Graph.Models.ODataErrors;
 
-namespace SharePointUploader
+namespace SharePointInterface
 {
 	internal static class Program
 	{
 		static void Main(string[] args)
 		{
-			if (args.Length != 4)
+			if (!new string[] { "--upload", "--download", "--move", "--delete" }.Contains(args[0]))
 			{
-				Console.WriteLine(@"Usage: SharePointUploader ""source folder name"" ""file name pattern"" ""SharePoint site name"" ""SharePoint destination folder path"" ");
+				Console.Write(@$"
+Usage: SharePointInterface <action> <parameters>
+
+SharePointInterface --upload ""source folder name"" ""file name pattern"" ""SharePoint site name"" ""SharePoint destination folder path""
+SharePointInterface --download ""SharePoint site name"" ""SharePoint source file path"" ""Destination file path""
+SharePointInterface --move ""SharePoint site name"" ""SharePoint source file path"" ""SharePoint destination folder path""
+SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
+");
 				Environment.Exit(0);
 			}
 
 			try
 			{
-				RunAsync(args[0], args[1], args[2], args[3]).GetAwaiter().GetResult();
+				RunAsync(args).GetAwaiter().GetResult();
 			}
 			catch (Exception ex)
 			{
@@ -27,54 +34,103 @@ namespace SharePointUploader
 			}
 		}
 
-		private static async Task RunAsync(string sourceFolder, string filePattern, string siteName, string siteFolderPath)
+		private static GraphServiceClient InitializeGraph(Settings settings) => GraphHelper.InitializeGraphForAppOnlyAuth(settings);
+
+		private static async Task RunAsync(string[] args)
 		{
-			AuthenticationConfig config = AuthenticationConfig.ReadFromJsonFile(System.IO.Path.Join(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location), "appsettings.json"));
+			var settings = Settings.LoadSettings();
 
-			// You can run this sample using ClientSecret or Certificate. The code will differ only when instantiating the IConfidentialClientApplication
-			bool isUsingClientSecret = Shared.IsAppUsingClientSecret(config);
+			var graphServiceClient = InitializeGraph(settings);
 
-			// Even if this is a console application here, a daemon application is a confidential client application
-
-			if (isUsingClientSecret)
+			switch (args[0])
 			{
-				// Even if this is a console application here, a daemon application is a confidential client application
-				Shared.app = ConfidentialClientApplicationBuilder.Create(config.ClientId)
-					.WithClientSecret(config.ClientSecret)
-					.WithAuthority(new Uri(config.Authority))
-					.Build();
+				case "--upload":
+					{
+						var sourceFolder = args[1];
+						var filePattern = args[2];
+						var siteName = args[3];
+						var siteFolderPath = args[4];
+						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
+						if (sites == null)
+						{
+							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
+							Environment.Exit(1);
+						}
+						var siteId = sites.First().Id;
+						if (siteId == null)
+						{
+							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
+							Environment.Exit(1);
+						}
+
+						await uploadFiles(graphServiceClient, sourceFolder, filePattern, siteId, siteFolderPath);
+						break;
+					}
+				case "--download":
+					{
+						var siteName = args[1];
+						var siteFilePath = args[2];
+						var destinationPath = args[3];
+						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
+						if (sites == null)
+						{
+							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
+							Environment.Exit(1);
+						}
+						var siteId = sites.First().Id;
+						if (siteId == null)
+						{
+							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
+							Environment.Exit(1);
+						}
+
+						await downloadFile(graphServiceClient, siteId, siteFilePath, destinationPath);
+						break;
+					}
+				case "--move":
+					{
+						var siteName = args[1];
+						var siteFilePath = args[2];
+						var destinationPath = args[3];
+						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
+						if (sites == null)
+						{
+							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
+							Environment.Exit(1);
+						}
+						var siteId = sites.First().Id;
+						if (siteId == null)
+						{
+							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
+							Environment.Exit(1);
+						}
+
+						await moveFile(graphServiceClient, siteId, siteFilePath, destinationPath);
+						break;
+					}
+				case "--delete":
+					{
+						var siteName = args[1];
+						var siteFilePath = args[2];
+						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
+						if (sites == null)
+						{
+							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
+							Environment.Exit(1);
+						}
+						var siteId = sites.First().Id;
+						if (siteId == null)
+						{
+							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
+							Environment.Exit(1);
+						}
+
+						await deleteFile(graphServiceClient, siteId, siteFilePath);
+						break;
+					}
+				default:
+					break;
 			}
-
-			else
-			{
-				ICertificateLoader certificateLoader = new DefaultCertificateLoader();
-				certificateLoader.LoadIfNeeded(config.Certificate);
-
-				Shared.app = ConfidentialClientApplicationBuilder.Create(config.ClientId)
-					.WithCertificate(config.Certificate.Certificate)
-					.WithAuthority(new Uri(config.Authority))
-					.Build();
-			}
-
-			Shared.app.AddInMemoryTokenCache();
-
-			// With client credentials flows the scopes is ALWAYS of the shape "resource/.default", as the 
-			// application permissions need to be set statically (in the portal or by PowerShell), and then granted by
-			// a tenant administrator. 
-			// Generates a scope -> "https://graph.microsoft.com/.default"
-
-			// Call MS graph using the Graph SDK
-			GraphServiceClient graphServiceClient = Shared.GetAuthenticatedGraphClient(Shared.app, new string[] { $"{config.ApiUrl}.default" });
-
-			var sites = await graphServiceClient.Sites.Request(new Option[] { new QueryOption("search", siteName) }).GetAsync();
-			if (sites.Count > 1)
-			{
-				Logger.Log($"Non-unique site name. Search query = {siteName}");
-				Environment.Exit(1);
-			}
-			var siteId = sites[0].Id;
-
-			await uploadFiles(graphServiceClient, sourceFolder, filePattern, siteId, siteFolderPath);
 		}
 
 		private static async Task uploadFiles(GraphServiceClient client, string sourceFolder, string filePattern, string siteId, string siteFolderPath)
@@ -82,30 +138,182 @@ namespace SharePointUploader
 
 			foreach (var fi in new DirectoryInfo(sourceFolder).GetFiles(filePattern))
 			{
-				Logger.Log($"Upload file {fi.FullName} to site {siteId} path {siteFolderPath + "/" + fi.Name}");
 				using var fileStream = fi.OpenRead();
-				var uploadProps = new DriveItemUploadableProperties
-				{
-					AdditionalData = new Dictionary<string, object>
-					{
-						 { "@microsoft.graph.conflictBehavior", "replace" }
-					}
-				};
 
-				var uploadSession = await client.Sites[siteId].Drive.Root.ItemWithPath(siteFolderPath + "/" + fi.Name)
-				.CreateUploadSession(uploadProps).Request().PostAsync();
+				var drive = await client.Sites[siteId].Drive.GetAsync();
+				if (drive == null)
+				{
+					Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
+					Environment.Exit(1);
+				}
+
+				var uploadSession = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFolderPath + "/" + fi.Name).CreateUploadSession.PostAsync(new Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession.CreateUploadSessionPostRequestBody
+				{
+					Item = new Microsoft.Graph.Models.DriveItemUploadableProperties
+					{
+						AdditionalData = new Dictionary<string, object> {
+							{ "@microsoft.graph.conflictBehavior", "replace" }
+						}
+					}
+				});
 
 				try
 				{
 					var uploadResult = await new LargeFileUploadTask<DriveItem>(uploadSession, fileStream).UploadAsync();
 					Logger.Log(uploadResult.UploadSucceeded ?
-									  $"Upload complete, item ID: {uploadResult.ItemResponse.Id}" :
-									  "Upload failed");
+									  $"SUCCESS: Upload file {fi.FullName} to site {siteId} path {siteFolderPath + "/" + fi.Name} complete" :
+									  $"ERROR: Upload file {fi.FullName} to site {siteId} path {siteFolderPath + "/" + fi.Name} failed");
 				}
-				catch (ServiceException ex)
+				catch (ODataError ex)
 				{
-					Logger.Log($"Error uploading: {ex.ToString()}");
+					Logger.Log($"ERROR: Error uploading: {ex.ToString()}");
 				}
+			}
+		}
+
+		private static async Task downloadFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationPath)
+		{
+			var fileInfo = new FileInfo(destinationPath);
+			using var writeStream = fileInfo.Create();
+
+			var drive = await client.Sites[siteId].Drive.GetAsync();
+			if (drive == null)
+			{
+				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
+				Environment.Exit(1);
+			}
+
+			var content = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).Content.GetAsync();
+
+			if (content == null)
+			{
+				Logger.Log($"ERROR: File {siteFilePath} of site {siteId} could not be found!");
+				Environment.Exit(1);
+			}
+
+			content.CopyTo(writeStream);
+			Logger.Log(@$"SUCCESS: Downloaded file ""{siteFilePath}"" to ""{destinationPath}""");
+		}
+
+		private static async Task moveFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationFolder)
+		{
+			var drive = await client.Sites[siteId].Drive.GetAsync();
+			if (drive == null)
+			{
+				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
+				Environment.Exit(1);
+			}
+
+			var file = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).GetAsync();
+
+			if (file == null)
+			{
+				Logger.Log($"ERROR: File {siteFilePath} of site {siteId} could not be found!");
+				Environment.Exit(1);
+			}
+			DriveItem? destfolder;
+			try
+			{
+				destfolder = await client.Drives[drive.Id].Items["root"].ItemWithPath(destinationFolder).GetAsync();
+			}
+			catch (ODataError e)
+			{
+				if (e.Error?.Code == "itemNotFound")
+				{
+					destfolder = null;
+				}
+				else
+				{
+					throw;
+				}
+			}
+
+
+			if (destfolder == null)
+			{
+				var path = destinationFolder.Split('/');
+				var parent = await client.Drives[drive.Id].Items["root"].GetAsync();
+
+				for (int i = 0; i < path.Length; i++)
+				{
+					var data = await client.Drives[drive.Id].Items[parent?.Id].Children.GetAsync();
+					var items = data?.Value?.Where((item) => item.Name == path[i]);
+					if (items == null)
+					{
+						Logger.Log($"ERROR: Error on enumeration in subfolders!");
+						Environment.Exit(1);
+					}
+					switch (items.Count())
+					{
+						case 0:
+							parent = await client.Drives[drive.Id].Items[parent?.Id].Children.PostAsync(new DriveItem
+							{
+								Name = path[i],
+								Folder = new Folder()
+							});
+							break;
+						case 1:
+							if (items.First().Folder == null)
+							{
+								Logger.Log($"ERROR: Item {string.Join('/', path[0..i])} on site {siteId} is not a folder!");
+								Environment.Exit(1);
+							}
+							parent = await client.Drives[drive.Id].Items[items.First().Id].GetAsync();
+							break;
+						default:
+							Logger.Log($"ERROR: Multiple items with name {path[i]} on site {siteId}!");
+							Environment.Exit(1);
+							break;
+					}
+				}
+				destfolder = parent;
+			}
+
+			if (destfolder == null)
+			{
+				Logger.Log($"ERROR: Folder {destinationFolder} doesn't exist on site {siteId}!");
+				Environment.Exit(1);
+			}
+
+			var result = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).PatchAsync(new DriveItem
+			{
+				ParentReference = new ItemReference
+				{
+					Id = destfolder.Id
+				}
+			});
+
+			if (result == null)
+			{
+				Logger.Log($"ERROR: Error in moving the file on site {siteId}!");
+				Environment.Exit(1);
+			}
+			else
+			{
+				Logger.Log($"SUCCESS: File {siteFilePath} moved to folder {destinationFolder} on site {siteId}!");
+			}
+		}
+
+		private static async Task deleteFile(GraphServiceClient client, string siteId, string filePath)
+		{
+			var drive = await client.Sites[siteId].Drive.GetAsync();
+			if (drive == null)
+			{
+				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
+				Environment.Exit(1);
+			}
+
+			var file = await client.Drives[drive.Id].Items["root"].ItemWithPath(filePath).GetAsync();
+
+			if (file == null)
+			{
+				Logger.Log($"INFO: File {filePath} of site {siteId} is already deleted!");
+				Environment.Exit(0);
+			}
+			else
+			{
+				await client.Drives[drive.Id].Items["root"].ItemWithPath(filePath).DeleteAsync();
+				Logger.Log($"SUCCESS: File {filePath} of site {siteId} successfully deleted!");
 			}
 		}
 	}
