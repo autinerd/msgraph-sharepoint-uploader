@@ -7,7 +7,7 @@ namespace SharePointInterface
 	{
 		internal static void Log(string line)
 		{
-			using var sw = new StreamWriter("client.log", true, Encoding.UTF8) { AutoFlush = true };
+			using StreamWriter sw = new("client.log", true, Encoding.UTF8) { AutoFlush = true };
 			sw.WriteLine($"[{DateTime.Now.ToString("u", DateTimeFormatInfo.InvariantInfo)}, PID: {Environment.ProcessId}] {line}");
 		}
 	}

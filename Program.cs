@@ -6,9 +6,9 @@ namespace SharePointInterface
 {
 	internal static class Program
 	{
-		static void Main(string[] args)
+		public static void Main(string[] args)
 		{
-			if (!new string[] { "--upload", "--download", "--move", "--delete" }.Contains(args[0]))
+			if (args.Length == 0 || !new string[] { "--upload", "--download", "--move", "--delete" }.Contains(args[0]))
 			{
 				Console.Write(@$"
 Usage: SharePointInterface <action> <parameters>
@@ -34,98 +34,102 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 			}
 		}
 
-		private static GraphServiceClient InitializeGraph(Settings settings) => GraphHelper.InitializeGraphForAppOnlyAuth(settings);
+		private static GraphServiceClient InitializeGraph(Settings settings)
+		{
+			return GraphHelper.InitializeGraphForAppOnlyAuth(settings);
+		}
+
 
 		private static async Task RunAsync(string[] args)
 		{
-			var settings = Settings.LoadSettings();
+			Settings settings = Settings.LoadSettings();
 
-			var graphServiceClient = InitializeGraph(settings);
+			GraphServiceClient graphServiceClient = InitializeGraph(settings);
 
 			switch (args[0])
 			{
 				case "--upload":
 					{
-						var sourceFolder = args[1];
-						var filePattern = args[2];
-						var siteName = args[3];
-						var siteFolderPath = args[4];
+						string sourceFolder = args[1];
+						string filePattern = args[2];
+						string siteName = args[3];
+						string siteFolderPath = args[4];
 						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
-						if (sites == null)
+						if (sites == null || !sites.Any())
 						{
 							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
 							Environment.Exit(1);
 						}
-						var siteId = sites.First().Id;
+						string? siteId = sites.First().Id;
 						if (siteId == null)
 						{
 							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
 							Environment.Exit(1);
 						}
 
-						await uploadFiles(graphServiceClient, sourceFolder, filePattern, siteId, siteFolderPath);
+						await UploadFiles(graphServiceClient, sourceFolder, filePattern, siteId, siteFolderPath);
 						break;
 					}
 				case "--download":
 					{
-						var siteName = args[1];
-						var siteFilePath = args[2];
-						var destinationPath = args[3];
+						string siteName = args[1];
+						string siteFilePath = args[2];
+						string destinationPath = args[3];
 						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
-						if (sites == null)
+						if (sites == null || !sites.Any())
 						{
 							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
 							Environment.Exit(1);
 						}
-						var siteId = sites.First().Id;
+						string? siteId = sites.First().Id;
 						if (siteId == null)
 						{
 							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
 							Environment.Exit(1);
 						}
 
-						await downloadFile(graphServiceClient, siteId, siteFilePath, destinationPath);
+						await DownloadFile(graphServiceClient, siteId, siteFilePath, destinationPath);
 						break;
 					}
 				case "--move":
 					{
-						var siteName = args[1];
-						var siteFilePath = args[2];
-						var destinationPath = args[3];
+						string siteName = args[1];
+						string siteFilePath = args[2];
+						string destinationPath = args[3];
 						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
-						if (sites == null)
+						if (sites == null || !sites.Any())
 						{
 							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
 							Environment.Exit(1);
 						}
-						var siteId = sites.First().Id;
+						string? siteId = sites.First().Id;
 						if (siteId == null)
 						{
 							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
 							Environment.Exit(1);
 						}
 
-						await moveFile(graphServiceClient, siteId, siteFilePath, destinationPath);
+						await MoveFile(graphServiceClient, siteId, siteFilePath, destinationPath);
 						break;
 					}
 				case "--delete":
 					{
-						var siteName = args[1];
-						var siteFilePath = args[2];
+						string siteName = args[1];
+						string siteFilePath = args[2];
 						IEnumerable<Site>? sites = (await graphServiceClient.Sites.GetAsync((config) => config.QueryParameters.Search = $"\"{siteName}\""))?.Value?.Where((site) => site.Name == siteName);
-						if (sites == null)
+						if (sites == null || !sites.Any())
 						{
 							Logger.Log($"ERROR: No site with name \"{siteName}\" found.");
 							Environment.Exit(1);
 						}
-						var siteId = sites.First().Id;
+						string? siteId = sites.First().Id;
 						if (siteId == null)
 						{
 							Logger.Log($"ERROR: Site ID is null! Search query = {siteName}");
 							Environment.Exit(1);
 						}
 
-						await deleteFile(graphServiceClient, siteId, siteFilePath);
+						await DeleteFile(graphServiceClient, siteId, siteFilePath);
 						break;
 					}
 				default:
@@ -133,23 +137,23 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 			}
 		}
 
-		private static async Task uploadFiles(GraphServiceClient client, string sourceFolder, string filePattern, string siteId, string siteFolderPath)
+		private static async Task UploadFiles(GraphServiceClient client, string sourceFolder, string filePattern, string siteId, string siteFolderPath)
 		{
 
-			foreach (var fi in new DirectoryInfo(sourceFolder).GetFiles(filePattern))
+			foreach (FileInfo fi in new DirectoryInfo(sourceFolder).GetFiles(filePattern))
 			{
-				using var fileStream = fi.OpenRead();
+				using FileStream fileStream = fi.OpenRead();
 
-				var drive = await client.Sites[siteId].Drive.GetAsync();
+				Drive? drive = await client.Sites[siteId].Drive.GetAsync();
 				if (drive == null)
 				{
 					Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
 					Environment.Exit(1);
 				}
 
-				var uploadSession = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFolderPath + "/" + fi.Name).CreateUploadSession.PostAsync(new Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession.CreateUploadSessionPostRequestBody
+				UploadSession? uploadSession = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFolderPath + "/" + fi.Name).CreateUploadSession.PostAsync(new Microsoft.Graph.Drives.Item.Items.Item.CreateUploadSession.CreateUploadSessionPostRequestBody
 				{
-					Item = new Microsoft.Graph.Models.DriveItemUploadableProperties
+					Item = new DriveItemUploadableProperties
 					{
 						AdditionalData = new Dictionary<string, object> {
 							{ "@microsoft.graph.conflictBehavior", "replace" }
@@ -159,31 +163,31 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 
 				try
 				{
-					var uploadResult = await new LargeFileUploadTask<DriveItem>(uploadSession, fileStream).UploadAsync();
+					UploadResult<DriveItem> uploadResult = await new LargeFileUploadTask<DriveItem>(uploadSession, fileStream).UploadAsync();
 					Logger.Log(uploadResult.UploadSucceeded ?
 									  $"SUCCESS: Upload file {fi.FullName} to site {siteId} path {siteFolderPath + "/" + fi.Name} complete" :
 									  $"ERROR: Upload file {fi.FullName} to site {siteId} path {siteFolderPath + "/" + fi.Name} failed");
 				}
 				catch (ODataError ex)
 				{
-					Logger.Log($"ERROR: Error uploading: {ex.ToString()}");
+					Logger.Log($"ERROR: Error uploading: {ex}");
 				}
 			}
 		}
 
-		private static async Task downloadFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationPath)
+		private static async Task DownloadFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationPath)
 		{
-			var fileInfo = new FileInfo(destinationPath);
-			using var writeStream = fileInfo.Create();
+			FileInfo fileInfo = new(destinationPath);
+			using FileStream writeStream = fileInfo.Create();
 
-			var drive = await client.Sites[siteId].Drive.GetAsync();
+			Drive? drive = await client.Sites[siteId].Drive.GetAsync();
 			if (drive == null)
 			{
 				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
 				Environment.Exit(1);
 			}
 
-			var content = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).Content.GetAsync();
+			Stream? content = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).Content.GetAsync();
 
 			if (content == null)
 			{
@@ -195,16 +199,16 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 			Logger.Log(@$"SUCCESS: Downloaded file ""{siteFilePath}"" to ""{destinationPath}""");
 		}
 
-		private static async Task moveFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationFolder)
+		private static async Task MoveFile(GraphServiceClient client, string siteId, string siteFilePath, string destinationFolder)
 		{
-			var drive = await client.Sites[siteId].Drive.GetAsync();
+			Drive? drive = await client.Sites[siteId].Drive.GetAsync();
 			if (drive == null)
 			{
 				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
 				Environment.Exit(1);
 			}
 
-			var file = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).GetAsync();
+			DriveItem? file = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).GetAsync();
 
 			if (file == null)
 			{
@@ -231,13 +235,13 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 
 			if (destfolder == null)
 			{
-				var path = destinationFolder.Split('/');
-				var parent = await client.Drives[drive.Id].Items["root"].GetAsync();
+				string[] path = destinationFolder.Split('/');
+				DriveItem? parent = await client.Drives[drive.Id].Items["root"].GetAsync();
 
 				for (int i = 0; i < path.Length; i++)
 				{
-					var data = await client.Drives[drive.Id].Items[parent?.Id].Children.GetAsync();
-					var items = data?.Value?.Where((item) => item.Name == path[i]);
+					DriveItemCollectionResponse? data = await client.Drives[drive.Id].Items[parent?.Id].Children.GetAsync();
+					IEnumerable<DriveItem>? items = data?.Value?.Where((item) => item.Name == path[i]);
 					if (items == null)
 					{
 						Logger.Log($"ERROR: Error on enumeration in subfolders!");
@@ -275,7 +279,7 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 				Environment.Exit(1);
 			}
 
-			var result = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).PatchAsync(new DriveItem
+			DriveItem? result = await client.Drives[drive.Id].Items["root"].ItemWithPath(siteFilePath).PatchAsync(new DriveItem
 			{
 				ParentReference = new ItemReference
 				{
@@ -294,16 +298,16 @@ SharePointInterface --delete ""SharePoint site name"" ""SharePoint file path""
 			}
 		}
 
-		private static async Task deleteFile(GraphServiceClient client, string siteId, string filePath)
+		private static async Task DeleteFile(GraphServiceClient client, string siteId, string filePath)
 		{
-			var drive = await client.Sites[siteId].Drive.GetAsync();
+			Drive? drive = await client.Sites[siteId].Drive.GetAsync();
 			if (drive == null)
 			{
 				Logger.Log($"ERROR: Drive of site {siteId} could not be found!");
 				Environment.Exit(1);
 			}
 
-			var file = await client.Drives[drive.Id].Items["root"].ItemWithPath(filePath).GetAsync();
+			DriveItem? file = await client.Drives[drive.Id].Items["root"].ItemWithPath(filePath).GetAsync();
 
 			if (file == null)
 			{

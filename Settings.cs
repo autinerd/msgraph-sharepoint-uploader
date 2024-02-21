@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 namespace SharePointInterface
 {
-	public class Settings
+	internal class Settings
 	{
 		public string? ClientId { get; set; }
 		public string? ClientSecret { get; set; }

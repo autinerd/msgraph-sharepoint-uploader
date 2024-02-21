@@ -1,10 +1,9 @@
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.Graph;
-using Microsoft.Graph.Models;
 namespace SharePointInterface
 {
-	class GraphHelper
+	internal class GraphHelper
 	{
 		// Settings object
 		private static Settings? _settings;
@@ -19,23 +18,14 @@ namespace SharePointInterface
 
 			// Ensure settings isn't null
 			_ = settings ??
-				throw new System.NullReferenceException("Settings cannot be null");
+				throw new NullReferenceException("Settings cannot be null");
 
 			_settings = settings;
 
-			if (_clientSecretCredential == null)
-			{
-				_clientSecretCredential = new ClientSecretCredential(
+			_clientSecretCredential ??= new ClientSecretCredential(
 					_settings.TenantId, _settings.ClientId, _settings.ClientSecret);
-			}
 
-			if (_appClient == null)
-			{
-				_appClient = new GraphServiceClient(_clientSecretCredential,
-					// Use the default scope, which will request the scopes
-					// configured on the app registration
-					new[] { "https://graph.microsoft.com/.default" });
-			}
+			_appClient ??= new GraphServiceClient(_clientSecretCredential, new[] { "https://graph.microsoft.com/.default" });
 			return _appClient;
 		}
 
@@ -43,12 +33,10 @@ namespace SharePointInterface
 		{
 			// Ensure credential isn't null
 			_ = _clientSecretCredential ??
-				throw new System.NullReferenceException("Graph has not been initialized for app-only auth");
+				throw new NullReferenceException("Graph has not been initialized for app-only auth");
 
 			// Request token with given scopes
-			var context = new TokenRequestContext(new[] { "https://graph.microsoft.com/.default" });
-			var response = await _clientSecretCredential.GetTokenAsync(context);
-			return response.Token;
+			return (await _clientSecretCredential.GetTokenAsync(new TokenRequestContext(new[] { "https://graph.microsoft.com/.default" }))).Token;
 		}
 	}
 }
