@@ -25,7 +25,7 @@ namespace SharePointInterface
 			_clientSecretCredential ??= new ClientSecretCredential(
 					_settings.TenantId, _settings.ClientId, _settings.ClientSecret);
 
-			_appClient ??= new GraphServiceClient(_clientSecretCredential, new[] { "https://graph.microsoft.com/.default" });
+			_appClient ??= new GraphServiceClient(_clientSecretCredential, ["https://graph.microsoft.com/.default"]);
 			return _appClient;
 		}
 
@@ -36,7 +36,7 @@ namespace SharePointInterface
 				throw new NullReferenceException("Graph has not been initialized for app-only auth");
 
 			// Request token with given scopes
-			return (await _clientSecretCredential.GetTokenAsync(new TokenRequestContext(new[] { "https://graph.microsoft.com/.default" }))).Token;
+			return (await _clientSecretCredential.GetTokenAsync(new TokenRequestContext(["https://graph.microsoft.com/.default"]))).Token;
 		}
 	}
 }
